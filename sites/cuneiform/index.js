@@ -48,31 +48,73 @@ function load_code() {
 /** @type {HTMLButtonElement} */
 const start = document.getElementById('start');
 start.addEventListener('click', function (event) {
+  maxStepCount = Number.POSITIVE_INFINITY;
+  debug = false;
+  PC = 0;
+  startTime = Date.now();
   load_code();
   run_machine();
 });
 
+/** @type {HTMLButtonElement} */
+const step = document.getElementById('step');
+step.addEventListener('click', function (event) {
+  if (stepCount === 0) {
+    PC = 0;
+    startTime = Date.now();
+    load_code();
+  }
+  debug = true;
+  maxStepCount = stepCount + 1;
+  run_machine();
+});
+
+function skipTo(n) {
+  PC = 0;
+  startTime = Date.now();
+  debug = false;
+  maxStepCount = n;
+  stepCount = 0;
+  load_code();
+  run_machine();
+}
+window.skipTo = skipTo;
+
 // flush_screen();
+const ptr = (v) => M[M[v]];
+const val = (v) => M[v];
+const addr = (v) => '$' + v;
 const INSTR = [
-  'null',
-  'jmp',
-  'jmpif',
-  'save',
-  'assign',
-  'load',
-  'store',
-  'add',
-  'sub',
-  'mul',
-  'div',
-  'mod',
-  'lt',
-  'nand',
-  'draw',
-  'read',
+  ['null'],
+  ['jmp', val],
+  ['jmpif', val, val],
+  ['loadpc', addr],
+  ['mov', addr, val],
+  ['load', addr, ptr],
+  ['store', val, val],
+  ['add', addr, val, val],
+  ['sub', addr, val, val],
+  ['mul', addr, val, val],
+  ['div', addr, val, val],
+  ['mod', addr, val, val],
+  ['lt', addr, val, val],
+  ['nand', addr, val, val],
+  ['draw'],
+  ['read', addr],
+  ['print', val],
 ];
 
+function show_instr() {
+  const fmt = INSTR[OP];
+  if (fmt) {
+    const [name, ...showlist] = fmt;
+    const args = [A, B, C];
+    console.log(name, ...showlist.map((f, i) => f(args[i])));
+  }
+}
+
 const E_HALT = 0;
+const E_BREAK = 1;
 const E_KEYBOARD = 2;
 const E_DRAW = 3;
 const E_PRINT = 4;
@@ -86,15 +128,20 @@ var RET;
 var RET_CODE;
 var globalID;
 var stepCount = 0;
+var maxStepCount = Number.POSITIVE_INFINITY;
+var debug = false;
 var startTime;
 
 function bigstep() {
-  while (true) {
+  while (stepCount < maxStepCount) {
     stepCount++;
     OP = M[PC];
     A = M[PC + 1];
     B = M[PC + 2];
     C = M[PC + 3];
+    if (debug) {
+      show_instr();
+    }
     switch (OP) {
       case 0:
         return E_HALT;
@@ -167,6 +214,22 @@ function bigstep() {
       }
     }
   }
+  return E_BREAK;
+}
+
+var watchList = [];
+
+function watch(addr, name) {
+  watchList.push([addr, name]);
+}
+window.watch = watch;
+
+watch(8, 'AC');
+watch(9, 'SI');
+watch(12, 'CW');
+
+function showwatch() {
+  console.log(watchList.map((v) => `${v[1]} = ${M[v[0]]}`).join(' '));
 }
 
 function repeatOften() {
@@ -191,6 +254,15 @@ function repeatOften() {
       }
       case E_PRINT: {
         print(RET_CODE);
+        break;
+      }
+      case E_BREAK: {
+        console.log(`stepCount = ${stepCount}`);
+        console.log(`PC = ${PC}`);
+        showwatch();
+        console.log(' ');
+        cancelAnimationFrame(globalID);
+        return;
       }
     }
   }
@@ -198,7 +270,5 @@ function repeatOften() {
 }
 
 function run_machine() {
-  PC = 0;
-  startTime = Date.now();
   globalID = requestAnimationFrame(repeatOften);
 }
