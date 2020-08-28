@@ -1,4 +1,3 @@
-// create the machine memory
 const MEM_SIZE = 0x200000;
 const SCREEN_BASE = 0x100000;
 const WORD_SIZE = 4;
@@ -14,11 +13,16 @@ const M = new Uint32Array(memory);
 const screen = new Uint8ClampedArray(memory, SCREEN_OFFSET, SCREEN_LENGTH);
 const imgData = new ImageData(screen, SCREEN_WIDTH, SCREEN_HEIGHT);
 
-for (let i = SCREEN_BASE; i < SCREEN_END; i++) {
-  M[i] = 0xff000000;
-}
+// Initialize the screen with black.
+// for (let i = SCREEN_BASE; i < SCREEN_END; i++) {
+//   M[i] = 0xff000000;
+// }
 
-window.M = M;
+function clear_mem() {
+  for (let i = 0; i < M.length; i++) {
+    M[i] = 0x00000000;
+  }
+}
 
 /** @type {HTMLCanvasElement} */
 const canvas = document.getElementById('screen');
@@ -35,6 +39,23 @@ function print(val) {
   output.innerText += val + ' ';
 }
 
+var keyMap = {
+  ArrowUp: 30,
+  ArrowRight: 31,
+  ArrowDown: 32,
+  ArrowLeft: 33,
+};
+
+document.addEventListener('keydown', (event) => {
+  if (event.defaultPrevented) {
+    return; // Do nothing if event already handled
+  }
+  if (keyMap[event.code] !== undefined) {
+    add_key_press(keyMap[event.code]);
+  }
+  event.preventDefault();
+});
+
 /** @type {HTMLTextAreaElement} */
 const code = document.getElementById('code');
 function load_code() {
@@ -45,71 +66,151 @@ function load_code() {
     .forEach((v, i) => (M[i] = v));
 }
 
-/** @type {HTMLButtonElement} */
-const start = document.getElementById('start');
-start.addEventListener('click', function (event) {
-  maxStepCount = Number.POSITIVE_INFINITY;
-  debug = false;
-  PC = 0;
-  startTime = Date.now();
-  load_code();
-  run_machine();
-});
+const btn_start = document.getElementById('start');
+const btn_step = document.getElementById('step');
+const btn_reload = document.getElementById('reload');
+btn_start.addEventListener('click', handle_btn);
+btn_step.addEventListener('click', handle_btn);
+btn_reload.addEventListener('click', handle_btn);
 
-/** @type {HTMLButtonElement} */
-const step = document.getElementById('step');
-step.addEventListener('click', function (event) {
-  if (stepCount === 0) {
-    PC = 0;
-    startTime = Date.now();
-    load_code();
+var STATE_INIT = 0;
+var STATE_RUNNING = 1;
+var STATE_PAUSED = 2;
+var STATE_BLOCKED = 3;
+var STATE_HALTED = 4;
+var STATE_CURR;
+
+var btn_handlers = {
+  [STATE_INIT]: {
+    start() {
+      set_state_running();
+    },
+    step() {
+      set_state_paused();
+    },
+  },
+  [STATE_RUNNING]: {},
+  [STATE_PAUSED]: {
+    start() {
+      set_state_running();
+    },
+    step() {
+      set_state_paused();
+    },
+    reload() {
+      set_state_init();
+    },
+  },
+  [STATE_BLOCKED]: {},
+  [STATE_HALTED]: {
+    start() {
+      set_state_init();
+      set_state_running();
+    },
+    step() {
+      set_state_init();
+      set_state_paused();
+    },
+    reload() {
+      set_state_init();
+    },
+  },
+};
+
+function handle_btn(event) {
+  // dispatch to the relevant handler based for the current state.
+  const currentHandlers = btn_handlers[STATE_CURR];
+  switch (event.target) {
+    case btn_start:
+      currentHandlers.start();
+      break;
+    case btn_step:
+      currentHandlers.step();
+      break;
+    case btn_reload:
+      currentHandlers.reload();
+      break;
   }
-  debug = true;
-  maxStepCount = stepCount + 1;
-  run_machine();
-});
-
-function skipTo(n) {
-  PC = 0;
-  startTime = Date.now();
-  debug = false;
-  maxStepCount = n;
-  stepCount = 0;
-  load_code();
-  run_machine();
 }
-window.skipTo = skipTo;
 
-// flush_screen();
-const ptr = (v) => M[M[v]];
+function btn_disable_unused() {
+  // buttons are disabled if they don't have a handler.
+  btn_start.disabled = !btn_handlers[STATE_CURR].start;
+  btn_step.disabled = !btn_handlers[STATE_CURR].step;
+  btn_reload.disabled = !btn_handlers[STATE_CURR].reload;
+}
+
+function set_state_init() {
+  STATE_CURR = STATE_INIT;
+  PC = 0;
+  stepCount = 0;
+  btn_disable_unused();
+  clear_mem();
+  flush_screen();
+  load_code();
+}
+function set_state_running() {
+  STATE_CURR = STATE_RUNNING;
+  maxStepCount = Number.POSITIVE_INFINITY;
+  btn_disable_unused();
+  machine_start();
+}
+function set_state_paused() {
+  STATE_CURR = STATE_PAUSED;
+  maxStepCount = stepCount + 1;
+  btn_disable_unused();
+  machine_start();
+}
+var STATE_RESUME;
+function set_state_blocked() {
+  STATE_RESUME = STATE_CURR;
+  STATE_CURR = STATE_BLOCKED;
+  btn_disable_unused();
+}
+function set_state_resume() {
+  if (STATE_RESUME === STATE_PAUSED) {
+    set_state_paused();
+  }
+  if (STATE_RESUME === STATE_RUNNING) {
+    set_state_running();
+  }
+}
+function set_state_halted() {
+  STATE_CURR = STATE_HALTED;
+  btn_disable_unused();
+}
+set_state_init();
+
 const val = (v) => M[v];
-const addr = (v) => '$' + v;
+const ptr = (v) => val(M[v]);
+const addr = (v) => '$' + v.toString(16);
+const addrPtr = (v) => addr(M[v]);
 const INSTR = [
   ['null'],
-  ['jmp', val],
-  ['jmpif', val, val],
-  ['loadpc', addr],
-  ['mov', addr, val],
-  ['load', addr, ptr],
-  ['store', val, val],
-  ['add', addr, val, val],
-  ['sub', addr, val, val],
-  ['mul', addr, val, val],
-  ['div', addr, val, val],
-  ['mod', addr, val, val],
-  ['lt', addr, val, val],
+  [' jmp', val],
+  [' jif', val, val],
+  [' lpc', addr],
+  [' mov', addr, val],
+  ['load', addr, ptr], // M[A] <- M[M[B]]
+  ['stor', val, addrPtr], // M[A] -> M[M[B]]
+  [' add', addr, val, val],
+  [' sub', addr, val, val],
+  [' mul', addr, val, val],
+  [' div', addr, val, val],
+  [' mod', addr, val, val],
+  ['  lt', addr, val, val],
   ['nand', addr, val, val],
   ['draw'],
   ['read', addr],
-  ['print', val],
+  ['prnt', val],
 ];
-
 function show_instr() {
   const fmt = INSTR[OP];
   if (fmt) {
-    const [name, ...showlist] = fmt;
-    const args = [A, B, C];
-    console.log(name, ...showlist.map((f, i) => f(args[i])));
+    const [name, ...fmtarg] = fmt;
+    const argsVals = [A, B, C];
+    const args = fmtarg.map((f, i) => f(argsVals[i])).join(' ');
+    console.log(`${PC.toString(16).padStart(4)}: ${name} ${args}`);
   }
 }
 
@@ -119,27 +220,80 @@ const E_KEYBOARD = 2;
 const E_DRAW = 3;
 const E_PRINT = 4;
 
-var PC = 0;
+var PC;
 var OP;
 var A;
 var B;
 var C;
 var RET;
 var RET_CODE;
-var globalID;
-var stepCount = 0;
-var maxStepCount = Number.POSITIVE_INFINITY;
-var debug = false;
-var startTime;
 
-function bigstep() {
+var keyboardBuffer = [];
+var requestAnimationFrameHandle;
+var maxStepCount;
+var stepCount;
+
+function add_key_press(key) {
+  if (STATE_CURR === STATE_BLOCKED && RET === E_KEYBOARD) {
+    console.log('key press', key);
+    M[RET_CODE] = key;
+    set_state_resume();
+  } else if (STATE_CURR === STATE_RUNNING) {
+    keyboardBuffer.push(key);
+    // max buffer length
+    if (keyboardBuffer.length > 5) {
+      keyboardBuffer.shift();
+    }
+  }
+}
+
+function machine_start() {
+  requestAnimationFrameHandle = requestAnimationFrame(machine_step_outer);
+}
+function machine_step_outer() {
+  loop: while (true) {
+    RET = machine_step_inner();
+    switch (RET) {
+      case E_DRAW:
+        flush_screen();
+        break loop;
+      case E_HALT: {
+        console.log(`Halted. (${stepCount} steps)`);
+        cancelAnimationFrame(requestAnimationFrameHandle);
+        set_state_halted();
+        return;
+      }
+      case E_KEYBOARD: {
+        if (keyboardBuffer.length > 0) {
+          M[RET_CODE] = keyboardBuffer.shift();
+          break;
+        } else {
+          cancelAnimationFrame(requestAnimationFrameHandle);
+          set_state_blocked();
+          return;
+        }
+      }
+      case E_PRINT: {
+        print(RET_CODE);
+        break;
+      }
+      case E_BREAK: {
+        cancelAnimationFrame(requestAnimationFrameHandle);
+        return;
+      }
+    }
+  }
+  requestAnimationFrameHandle = requestAnimationFrame(machine_step_outer);
+}
+function machine_step_inner() {
   while (stepCount < maxStepCount) {
     stepCount++;
     OP = M[PC];
     A = M[PC + 1];
     B = M[PC + 2];
     C = M[PC + 3];
-    if (debug) {
+    if (stepCount === maxStepCount) {
+      // stepping mode
       show_instr();
     }
     switch (OP) {
@@ -215,60 +369,4 @@ function bigstep() {
     }
   }
   return E_BREAK;
-}
-
-var watchList = [];
-
-function watch(addr, name) {
-  watchList.push([addr, name]);
-}
-window.watch = watch;
-
-watch(8, 'AC');
-watch(9, 'SI');
-watch(12, 'CW');
-
-function showwatch() {
-  console.log(watchList.map((v) => `${v[1]} = ${M[v[0]]}`).join(' '));
-}
-
-function repeatOften() {
-  loop: while (true) {
-    RET = bigstep();
-    switch (RET) {
-      case E_DRAW:
-        flush_screen();
-        break loop;
-      case E_HALT: {
-        const duration = Date.now() - startTime;
-        const stepsPerSecond = Math.round(stepCount / duration);
-        console.log(
-          `Halted. (${stepCount} steps, ${stepsPerSecond} steps per second)`
-        );
-        cancelAnimationFrame(globalID);
-        return;
-      }
-      case E_KEYBOARD: {
-        M[RET_CODE] = Math.floor(Math.random() * 256);
-        break;
-      }
-      case E_PRINT: {
-        print(RET_CODE);
-        break;
-      }
-      case E_BREAK: {
-        console.log(`stepCount = ${stepCount}`);
-        console.log(`PC = ${PC}`);
-        showwatch();
-        console.log(' ');
-        cancelAnimationFrame(globalID);
-        return;
-      }
-    }
-  }
-  globalID = requestAnimationFrame(repeatOften);
-}
-
-function run_machine() {
-  globalID = requestAnimationFrame(repeatOften);
 }
