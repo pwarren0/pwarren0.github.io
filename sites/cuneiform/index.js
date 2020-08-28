@@ -38,6 +38,9 @@ const output = document.getElementById('output');
 function print(val) {
   output.innerText += val + ' ';
 }
+function clear_output() {
+  output.innerText = '';
+}
 
 var keyMap = {
   ArrowUp: 30,
@@ -52,8 +55,8 @@ document.addEventListener('keydown', (event) => {
   }
   if (keyMap[event.code] !== undefined) {
     add_key_press(keyMap[event.code]);
+    event.preventDefault();
   }
-  event.preventDefault();
 });
 
 /** @type {HTMLTextAreaElement} */
@@ -76,50 +79,82 @@ btn_reload.addEventListener('click', handle_btn);
 var STATE_INIT = 0;
 var STATE_RUNNING = 1;
 var STATE_PAUSED = 2;
-var STATE_BLOCKED = 3;
-var STATE_HALTED = 4;
+var STATE_BLOCKED_1 = 3;
+var STATE_BLOCKED_N = 4;
+var STATE_HALTED = 5;
 var STATE_CURR;
 
-var btn_handlers = {
+var event_handlers = {
   [STATE_INIT]: {
     start() {
-      set_state_running();
+      set_state_running(Number.POSITIVE_INFINITY);
     },
     step() {
-      set_state_paused();
+      set_state_running(1);
     },
   },
-  [STATE_RUNNING]: {},
+  [STATE_RUNNING]: {
+    BREAK() {
+      set_state_paused();
+    },
+    READ() {
+      set_state_blocked();
+    },
+    HALT() {
+      set_state_halted();
+    },
+  },
   [STATE_PAUSED]: {
     start() {
-      set_state_running();
+      set_state_running(Number.POSITIVE_INFINITY);
     },
     step() {
-      set_state_paused();
+      set_state_running(1);
     },
     reload() {
       set_state_init();
     },
   },
-  [STATE_BLOCKED]: {},
-  [STATE_HALTED]: {
-    start() {
-      set_state_init();
-      set_state_running();
-    },
-    step() {
-      set_state_init();
-      set_state_paused();
+  [STATE_BLOCKED_1]: {
+    KEY() {
+      set_state_running(1);
     },
     reload() {
       set_state_init();
+    },
+    start() {
+      set_state_blocked_n();
+    },
+  },
+  [STATE_BLOCKED_N]: {
+    KEY() {
+      set_state_running(Number.POSITIVE_INFINITY);
+    },
+    reload() {
+      set_state_init();
+    },
+    step() {
+      set_state_blocked_1();
+    },
+  },
+  [STATE_HALTED]: {
+    reload() {
+      set_state_init();
+    },
+    start() {
+      set_state_init();
+      set_state_running(Number.POSITIVE_INFINITY);
+    },
+    step() {
+      set_state_init();
+      set_state_running(1);
     },
   },
 };
 
 function handle_btn(event) {
   // dispatch to the relevant handler based for the current state.
-  const currentHandlers = btn_handlers[STATE_CURR];
+  const currentHandlers = event_handlers[STATE_CURR];
   switch (event.target) {
     case btn_start:
       currentHandlers.start();
@@ -132,12 +167,42 @@ function handle_btn(event) {
       break;
   }
 }
+function handle_event(code) {
+  // dispatch to the relevant handler based for the current state.
+  const currentHandlers = event_handlers[STATE_CURR];
+  switch (code) {
+    case E_BREAK: {
+      if (currentHandlers.BREAK) {
+        currentHandlers.BREAK();
+      }
+      break;
+    }
+    case E_KEYBOARD: {
+      if (currentHandlers.READ) {
+        currentHandlers.READ();
+      }
+      break;
+    }
+    case E_HALT: {
+      if (currentHandlers.HALT) {
+        currentHandlers.HALT();
+      }
+      break;
+    }
+    case 'key': {
+      if (currentHandlers.KEY) {
+        currentHandlers.KEY();
+      }
+      break;
+    }
+  }
+}
 
 function btn_disable_unused() {
   // buttons are disabled if they don't have a handler.
-  btn_start.disabled = !btn_handlers[STATE_CURR].start;
-  btn_step.disabled = !btn_handlers[STATE_CURR].step;
-  btn_reload.disabled = !btn_handlers[STATE_CURR].reload;
+  btn_start.disabled = !event_handlers[STATE_CURR].start;
+  btn_step.disabled = !event_handlers[STATE_CURR].step;
+  btn_reload.disabled = !event_handlers[STATE_CURR].reload;
 }
 
 function set_state_init() {
@@ -146,34 +211,37 @@ function set_state_init() {
   stepCount = 0;
   btn_disable_unused();
   clear_mem();
+  clear_output();
   flush_screen();
   load_code();
 }
-function set_state_running() {
+function set_state_running(gas) {
   STATE_CURR = STATE_RUNNING;
-  maxStepCount = Number.POSITIVE_INFINITY;
+  maxStepCount = stepCount + gas;
   btn_disable_unused();
   machine_start();
 }
 function set_state_paused() {
   STATE_CURR = STATE_PAUSED;
-  maxStepCount = stepCount + 1;
   btn_disable_unused();
-  machine_start();
 }
-var STATE_RESUME;
 function set_state_blocked() {
-  STATE_RESUME = STATE_CURR;
-  STATE_CURR = STATE_BLOCKED;
+  if (maxStepCount > stepCount) {
+    set_state_blocked_n();
+  } else {
+    set_state_blocked_1();
+  }
+}
+function set_state_blocked_1() {
+  STATE_CURR = STATE_BLOCKED_1;
   btn_disable_unused();
 }
-function set_state_resume() {
-  if (STATE_RESUME === STATE_PAUSED) {
-    set_state_paused();
-  }
-  if (STATE_RESUME === STATE_RUNNING) {
-    set_state_running();
-  }
+function set_state_blocked_n() {
+  STATE_CURR = STATE_BLOCKED_N;
+  btn_disable_unused();
+}
+function is_blocked() {
+  return STATE_CURR === STATE_BLOCKED_1 || STATE_CURR == STATE_BLOCKED_N;
 }
 function set_state_halted() {
   STATE_CURR = STATE_HALTED;
@@ -234,10 +302,10 @@ var maxStepCount;
 var stepCount;
 
 function add_key_press(key) {
-  if (STATE_CURR === STATE_BLOCKED && RET === E_KEYBOARD) {
+  if (is_blocked() && RET === E_KEYBOARD) {
     console.log('key press', key);
     M[RET_CODE] = key;
-    set_state_resume();
+    handle_event('key');
   } else if (STATE_CURR === STATE_RUNNING) {
     keyboardBuffer.push(key);
     // max buffer length
@@ -260,7 +328,7 @@ function machine_step_outer() {
       case E_HALT: {
         console.log(`Halted. (${stepCount} steps)`);
         cancelAnimationFrame(requestAnimationFrameHandle);
-        set_state_halted();
+        handle_event(E_HALT);
         return;
       }
       case E_KEYBOARD: {
@@ -269,7 +337,7 @@ function machine_step_outer() {
           break;
         } else {
           cancelAnimationFrame(requestAnimationFrameHandle);
-          set_state_blocked();
+          handle_event(E_KEYBOARD);
           return;
         }
       }
@@ -279,6 +347,7 @@ function machine_step_outer() {
       }
       case E_BREAK: {
         cancelAnimationFrame(requestAnimationFrameHandle);
+        handle_event(E_BREAK);
         return;
       }
     }
