@@ -43,10 +43,11 @@ function clear_output() {
 }
 
 var keyMap = {
-  ArrowUp: 30,
-  ArrowRight: 31,
-  ArrowDown: 32,
-  ArrowLeft: 33,
+  Space: 32,
+  ArrowUp: 49,
+  ArrowRight: 50,
+  ArrowDown: 51,
+  ArrowLeft: 52,
 };
 
 document.addEventListener('keydown', (event) => {
@@ -56,6 +57,8 @@ document.addEventListener('keydown', (event) => {
   if (keyMap[event.code] !== undefined) {
     add_key_press(keyMap[event.code]);
     event.preventDefault();
+  } else {
+    console.log('unhandled key', event.code, event.keyCode);
   }
 });
 
@@ -121,6 +124,7 @@ var event_handlers = {
     },
     reload() {
       set_state_init();
+      set_state_running(1);
     },
     start() {
       set_state_blocked_n();
@@ -132,6 +136,7 @@ var event_handlers = {
     },
     reload() {
       set_state_init();
+      set_state_running(Number.POSITIVE_INFINITY);
     },
     step() {
       set_state_blocked_1();
