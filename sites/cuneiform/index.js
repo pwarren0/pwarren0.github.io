@@ -248,6 +248,7 @@ function set_state_halted() {
   btn_disable_unused();
 }
 set_state_init();
+set_state_running(Number.POSITIVE_INFINITY); // be brave! have the machine start as running.
 
 const val = (v) => M[v];
 const ptr = (v) => val(M[v]);
