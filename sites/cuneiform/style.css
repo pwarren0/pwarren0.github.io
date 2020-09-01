@@ -16,3 +16,12 @@ canvas {
   height: 684px;
   box-sizing: border-box;
 }
+
+#output {
+  border: 1px solid burlywood;
+  background: white;
+  color: grey;
+  width: 1024px;
+  height: 512px;
+  overflow-y: scroll;
+}

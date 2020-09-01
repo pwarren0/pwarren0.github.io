@@ -109,12 +109,21 @@
         <td colspan="2">
           <button id="start">Start</button>
           <button id="step">Step</button>
-          <button id="reload">Reload</button>
+          <button id="reload">Reload Program</button>
+          <button id="save">Save File</button>
+          <button id="load">Load File</button>
+          <button id="upload">Upload File</button>
           <pre id="state"></pre>
         </td>
       </tr>
     </table>
 
     <pre id="output" style="width: 1024px; white-space: pre-wrap"></pre>
+    <input
+      type="file"
+      id="files"
+      accept="application/octet-stream"
+      style="display: none"
+    />
   </body>
 </html>

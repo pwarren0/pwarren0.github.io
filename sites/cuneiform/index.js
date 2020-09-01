@@ -3,25 +3,72 @@ const SCREEN_BASE = 0x100000;
 const WORD_SIZE = 4;
 const SCREEN_WIDTH = 512;
 const SCREEN_HEIGHT = 684;
+const MEM_HEIGHT = 4096;
 
 const SCREEN_END = SCREEN_BASE + SCREEN_WIDTH * SCREEN_HEIGHT;
 const SCREEN_OFFSET = SCREEN_BASE * WORD_SIZE;
 const SCREEN_LENGTH = SCREEN_WIDTH * SCREEN_HEIGHT * WORD_SIZE;
 
 const memory = new ArrayBuffer(MEM_SIZE * WORD_SIZE);
+const Mu8 = new Uint8ClampedArray(memory);
 const M = new Uint32Array(memory);
 const screen = new Uint8ClampedArray(memory, SCREEN_OFFSET, SCREEN_LENGTH);
 const imgData = new ImageData(screen, SCREEN_WIDTH, SCREEN_HEIGHT);
 
-// Initialize the screen with black.
-// for (let i = SCREEN_BASE; i < SCREEN_END; i++) {
-//   M[i] = 0xff000000;
-// }
+if (window.location.hash) {
+  download_image(window.location.hash.slice(1));
+}
+
+function save_pc_in_jmp_header() {
+  // If the memory starts with [1, 2, ...] (that is, a jump instruction where
+  // the jump target is the 3rd word), then put the PC in the 3rd word.
+  if (M[0] === 1 && M[1] === 2) {
+    M[2] = PC;
+    console.log('saved PC in header');
+  }
+}
+
+function download_memory() {
+  download(memory, 'img_' + Date.now() + '.bin', 'application/octet-stream');
+}
+
+async function load_memory(fileOrBlob) {
+  const ab = await fileOrBlob.arrayBuffer();
+  const dst = new Uint8Array(memory);
+  const src = new Uint8Array(ab);
+  dst.set(src);
+}
+
+// Function to download data to a file
+function download(data, filename, type) {
+  var file = new Blob([data], { type: type });
+  if (window.navigator.msSaveOrOpenBlob)
+    // IE10+
+    window.navigator.msSaveOrOpenBlob(file, filename);
+  else {
+    // Others
+    var a = document.createElement('a'),
+      url = URL.createObjectURL(file);
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(function () {
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+    }, 0);
+  }
+}
 
 function clear_mem() {
   for (let i = 0; i < M.length; i++) {
-    M[i] = 0x00000000;
+    // M[i] = Math.floor(Math.random() * 0x100000000);
+    M[i] = 0;
   }
+  // Initialize the screen with black.
+  // for (let i = SCREEN_BASE; i < SCREEN_END; i++) {
+  //   M[i] = 0xff000000;
+  // }
 }
 
 /** @type {HTMLCanvasElement} */
@@ -31,7 +78,15 @@ canvas.height = SCREEN_HEIGHT;
 const ctx = canvas.getContext('2d');
 
 function flush_screen() {
+  // if (createImageBitmap) {
+  //   createImageBitmap(imgData, 0, 2048, SCREEN_WIDTH, SCREEN_HEIGHT).then(
+  //     (bm) => {
+  //       ctx.drawImage(bm, 0, 0, SCREEN_WIDTH, MEM_HEIGHT);
+  //     }
+  //   );
+  // } else {
   ctx.putImageData(imgData, 0, 0);
+  // }
 }
 
 const output = document.getElementById('output');
@@ -75,9 +130,63 @@ function load_code() {
 const btn_start = document.getElementById('start');
 const btn_step = document.getElementById('step');
 const btn_reload = document.getElementById('reload');
+
+const btn_save = document.getElementById('save');
+const btn_load = document.getElementById('load');
+const ipt_files = document.getElementById('files');
+
+const btn_upload = document.getElementById('upload');
+
 btn_start.addEventListener('click', handle_btn);
 btn_step.addEventListener('click', handle_btn);
 btn_reload.addEventListener('click', handle_btn);
+
+btn_save.addEventListener('click', () => {
+  save_pc_in_jmp_header();
+  download_memory();
+});
+btn_load.addEventListener('click', () => {
+  ipt_files.click();
+});
+ipt_files.addEventListener('change', (event) => {
+  // Get the FileList object from the file select event
+  const files = event.target.files;
+  // Check if there are files in the FileList
+  if (files.length !== 1) {
+    console.log('incorrect #files: ' + files.length);
+    return;
+  }
+  // For this we only want one image. We'll take the first.
+  var file = files[0];
+
+  set_state_init();
+  load_memory(file).then(() => {
+    flush_screen();
+    set_state_running(Number.POSITIVE_INFINITY);
+    event.target.value = ''; // reset the input field
+  });
+});
+
+btn_upload.addEventListener('click', async () => {
+  const response = await fetch('http://localhost:8080/save', {
+    method: 'put',
+    headers: {
+      'Content-Type': 'application/octet-stream',
+    },
+    body: new Blob([memory]),
+  });
+  const { hash } = await response.json();
+  window.location.hash = hash;
+});
+
+async function download_image(hash) {
+  const response = await fetch('http://localhost:8080/img/' + hash);
+  const blob = await response.blob();
+  set_state_init();
+  await load_memory(blob);
+  flush_screen();
+  set_state_running(Number.POSITIVE_INFINITY);
+}
 
 var STATE_INIT = 0;
 var STATE_RUNNING = 1;
@@ -309,7 +418,6 @@ var stepCount;
 
 function add_key_press(key) {
   if (is_blocked() && RET === E_KEYBOARD) {
-    console.log('key press', key);
     M[RET_CODE] = key;
     handle_event('key');
   } else if (STATE_CURR === STATE_RUNNING) {
