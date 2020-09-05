@@ -19,6 +19,21 @@ if (window.location.hash) {
   download_image(window.location.hash.slice(1));
 }
 
+// TODO: autosave to local storage?
+// TODO: unique human-friendly names?
+// TODO: something for browser location history?
+
+// setInterval(() => {
+//   if (
+//     STATE_CURR === STATE_RUNNING ||
+//     STATE_CURR === STATE_BLOCKED_1 ||
+//     STATE_CURR === STATE_BLOCKED_N
+//   ) {
+//     upload_image();
+//     console.log('autosave');
+//   }
+// }, 10 * 1000);
+
 function save_pc_in_jmp_header() {
   // If the memory starts with [1, 2, ...] (that is, a jump instruction where
   // the jump target is the 3rd word), then put the PC in the 3rd word.
@@ -167,7 +182,9 @@ ipt_files.addEventListener('change', (event) => {
   });
 });
 
-btn_upload.addEventListener('click', async () => {
+btn_upload.addEventListener('click', upload_image);
+
+async function upload_image() {
   const response = await fetch('http://localhost:8080/save', {
     method: 'put',
     headers: {
@@ -177,7 +194,7 @@ btn_upload.addEventListener('click', async () => {
   });
   const { hash } = await response.json();
   window.location.hash = hash;
-});
+}
 
 async function download_image(hash) {
   const response = await fetch('http://localhost:8080/img/' + hash);
@@ -529,7 +546,7 @@ function machine_step_inner() {
         PC += 4;
         continue;
       case 13:
-        M[A] = ~(M[B] & M[A]);
+        M[A] = ~(M[B] & M[C]);
         PC += 4;
         continue;
       case 14:
