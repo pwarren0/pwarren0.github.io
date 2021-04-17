@@ -4,7 +4,16 @@
     <link rel="shortcut icon" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQBAMAAADt3eJSAAAAJ1BMVEX///8AAAD///9p//9p//8AAABOv78nX18NHx9Bn580f38aPz9b399gmF2WAAAAU0lEQVQImWMwhgIGJIZZhWD7ZBBj4TabGcJAhpm0sbE1iGEtBlVjIQNlGAobCwoCpVw8ZFxcHEVcGFy8JaEMT4kjEIZLYdcRCMMNaPIUEAMCMBkAf5Qfzj0/5XcAAAAASUVORK5CYII=" />
     <title>Goo</title>
     <script>
-
+      function selectEnd() {
+        // https://stackoverflow.com/a/3866442
+        var range, selection;
+        range = document.createRange(); //Create a range (a range is a like the selection but invisible)
+        range.selectNodeContents(document.body); //Select the entire contents of the element with the range
+        range.collapse(false); //collapse the range to the end point. false means collapse to end rather than the start
+        selection = window.getSelection(); //get the selection object (allows you to change selection)
+        selection.removeAllRanges(); //remove any selections already made
+        selection.addRange(range); //make the range you have just created the visible selection
+      }
     </script>
     <style>
         body {
@@ -19,5 +28,9 @@
     <br>
     You can type something here.<br>
     <br>
+    <a href="https://github.com/pwarren0/pwarren0.github.io/edit/master/goo/index.html">Source</a>
   </body>
+  <script>
+    selectEnd();
+  </script>
 </html>
